@@ -1,0 +1,4 @@
+ailia==1.5.0.0
+numpy==2.2.6
+opencv-python==4.12.0.88
+matplotlib==3.10.6

@@ -5,27 +5,24 @@ from pathlib import Path
 
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
-
 import ailia
 
-# --- make local util/ importable --------------------------------------------
-UTIL_DIR = Path(__file__).resolve().parent / "util"
+# ========== robust paths ==========
+CODE_DIR = Path(__file__).resolve().parent          # .../solakair/code
+ROOT = CODE_DIR.parent                               # .../solakair
+UTIL_DIR = CODE_DIR / "util"
+CLIPS_DIR = ROOT / "clips"
+RESULTS_DIR = ROOT / "results"
 sys.path.insert(0, str(UTIL_DIR))  # use our bundled helpers first
-# ----------------------------------------------------------------------------
 
-# import original modules (now from solakair/code/util)
+# --- ailia sample helpers we copied into util/ ---
 from arg_utils import get_base_parser, update_parser, get_savepath  # noqa
 from model_utils import check_and_download_models  # noqa
 from image_utils import normalize_image  # noqa
-from detector_utils import load_image, plot_results, write_predictions  # noqa
+from detector_utils import load_image, write_predictions  # noqa
 from webcamera_utils import get_capture, get_writer  # noqa
 
-# logger
 from logging import getLogger  # noqa
-
 from picodet_utils import grid_priors, get_bboxes
 
 logger = getLogger(__name__)
@@ -34,35 +31,35 @@ logger = getLogger(__name__)
 # Parameters
 # ======================
 
-WEIGHT_S_320_PATH = 'picodet_s_320_coco.onnx'
-MODEL_S_320_PATH = 'picodet_s_320_coco.onnx.prototxt'
-WEIGHT_S_416_PATH = 'picodet_s_416_coco.onnx'
-MODEL_S_416_PATH = 'picodet_s_416_coco.onnx.prototxt'
-WEIGHT_M_416_PATH = 'picodet_m_416_coco.onnx'
-MODEL_M_416_PATH = 'picodet_m_416_coco.onnx.prototxt'
-WEIGHT_L_640_PATH = 'picodet_l_640_coco.onnx'
-MODEL_L_640_PATH = 'picodet_l_640_coco.onnx.prototxt'
+# Save ONNX + prototxt next to this script (portable across working dirs)
+WEIGHT_S_320_PATH = str(CODE_DIR / 'picodet_s_320_coco.onnx')
+MODEL_S_320_PATH  = str(CODE_DIR / 'picodet_s_320_coco.onnx.prototxt')
+WEIGHT_S_416_PATH = str(CODE_DIR / 'picodet_s_416_coco.onnx')
+MODEL_S_416_PATH  = str(CODE_DIR / 'picodet_s_416_coco.onnx.prototxt')
+WEIGHT_M_416_PATH = str(CODE_DIR / 'picodet_m_416_coco.onnx')
+MODEL_M_416_PATH  = str(CODE_DIR / 'picodet_m_416_coco.onnx.prototxt')
+WEIGHT_L_640_PATH = str(CODE_DIR / 'picodet_l_640_coco.onnx')
+MODEL_L_640_PATH  = str(CODE_DIR / 'picodet_l_640_coco.onnx.prototxt')
 REMOTE_PATH = 'https://storage.googleapis.com/ailia-models/picodet/'
 
 COCO_CATEGORY = (
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
-    "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
-    "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
-    "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
-    "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
-    "couch", "potted plant", "bed", "dining table", "toilet", "tv",
-    "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave",
-    "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
-    "scissors", "teddy bear", "hair drier", "toothbrush"
+    "person","bicycle","car","motorcycle","airplane","bus","train","truck",
+    "boat","traffic light","fire hydrant","stop sign","parking meter","bench",
+    "bird","cat","dog","horse","sheep","cow","elephant","bear","zebra",
+    "giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee",
+    "skis","snowboard","sports ball","kite","baseball bat","baseball glove",
+    "skateboard","surfboard","tennis racket","bottle","wine glass","cup","fork",
+    "knife","spoon","bowl","banana","apple","sandwich","orange","broccoli",
+    "carrot","hot dog","pizza","donut","cake","chair","couch","potted plant",
+    "bed","dining table","toilet","tv","laptop","mouse","remote","keyboard",
+    "cell phone","microwave","oven","toaster","sink","refrigerator","book",
+    "clock","vase","scissors","teddy bear","hair drier","toothbrush"
 )
 
-IMAGE_PATH = 'demo.jpg'
+from pathlib import Path
+IMAGE_PATH = str(Path(__file__).resolve())  # placeholder that always exists
+     # unused if we auto-pick a video
 SAVE_IMAGE_PATH = 'output.png'
-
 THRESHOLD = 0.3
 IOU = 0.6
 
@@ -98,32 +95,47 @@ USE_TRACK_CONFIRM = True
 TRACK_WINDOW = 3     # look back N frames
 MIN_HITS = 2         # must appear in >= MIN_HITS frames
 TRACK_IOU = 0.30
-_prev_boxes = deque(maxlen=TRACK_WINDOW)  # each: list of [x1,y1,x2,y2,prob,label]
+_prev_boxes = deque(maxlen=TRACK_WINDOW)  # each: [x1,y1,x2,y2,prob,label]
 
 # ======================
-# Argument Parser
+# Arg parser
 # ======================
 
 parser = get_base_parser('PP-PicoDet', IMAGE_PATH, SAVE_IMAGE_PATH)
 parser.add_argument('-th', '--threshold', default=THRESHOLD, type=float, help='object confidence threshold')
 parser.add_argument('-iou', '--iou', default=IOU, type=float, help='IOU threshold for NMS')
 parser.add_argument('-w', '--write_prediction', action='store_true', help='Flag to output the prediction file.')
-parser.add_argument('-m', '--model_type', default='s-416', choices=('s-320', 's-416', 'm-416', 'l-640'), help='model type')
-parser.add_argument('-w', '--write_prediction', nargs='?', const='txt', choices=['txt', 'json'], type=str,
+parser.add_argument('-m', '--model_type', default='s-416', choices=('s-320','s-416','m-416','l-640'), help='model type')
+parser.add_argument('-w', '--write_prediction', nargs='?', const='txt', choices=['txt','json'], type=str,
                     help='Output results to txt or json file.')
 args = update_parser(parser)
+
+# If the default 'demo.jpg' doesn't exist and no video was provided, clear inputs
+def _normalize_inputs():
+    """Keep only real media files; let main() auto-pick from clips/ if empty."""
+    if args.video is not None:
+        return
+    MEDIA_SUFFIXES = {
+        '.jpg','.jpeg','.png','.bmp','.tif','.tiff',
+        '.mp4','.mov','.m4v','.avi','.mkv'
+    }
+    valid = []
+    for p in args.input:
+        pp = Path(p)
+        if pp.exists() and pp.suffix.lower() in MEDIA_SUFFIXES:
+            valid.append(p)
+    args.input = valid  # empty means: we'll auto-pick a clip later
 
 # ======================
 # Helpers (flying-only overlay)
 # ======================
 
 def _flying_display_label(obj, im_w, im_h):
-    """Return display label for flying objects or None to drop."""
     orig = COCO_CATEGORY[int(obj.category)]
     disp = FLYING_LABEL_MAP.get(orig, None)
     if disp is None:
         return None
-    if DRONE_HEURISTIC and orig in ("bird", "airplane", "kite"):
+    if DRONE_HEURISTIC and orig in ("bird","airplane","kite"):
         box_w = obj.w * im_w
         box_h = obj.h * im_h
         area_frac = (box_w * box_h) / float(im_w * im_h + 1e-9)
@@ -133,7 +145,6 @@ def _flying_display_label(obj, im_w, im_h):
     return disp
 
 def draw_flying_results(dets, frame):
-    """Draw filtered flying objects with confidence."""
     H, W = frame.shape[:2]
     out = frame.copy()
     for o in dets:
@@ -166,8 +177,6 @@ def _iou(a, b):
     return inter / (area_a + area_b - inter + 1e-9)
 
 def confirm_multi_frame(dets, W, H, iou_thr=TRACK_IOU):
-    """Keep detections that persist across frames (>= MIN_HITS of last TRACK_WINDOW)."""
-    # current frame → pixel boxes
     cur = []
     for o in dets:
         x1 = int(o.x * W); y1 = int(o.y * H)
@@ -195,6 +204,7 @@ def preprocess(img, image_shape):
     img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
     w_scale = w / im_w; h_scale = h / im_h
     scale_factor = np.array([w_scale, h_scale, w_scale, h_scale], dtype=np.float32)
+    from image_utils import normalize_image
     img = normalize_image(img, normalize_type='ImageNet')
     divisor = 32
     pad_h = int(np.ceil(h / divisor)) * divisor
@@ -265,6 +275,24 @@ def predict(net, img):
     detect_object = post_processing(img, output, shape, scale_factor)
     return detect_object
 
+def draw_flying_results(dets, frame):
+    H, W = frame.shape[:2]
+    out = frame.copy()
+    for o in dets:
+        if ENABLE_FLYING_ONLY:
+            label = _flying_display_label(o, W, H)
+            if label is None:
+                continue
+        else:
+            label = COCO_CATEGORY[int(o.category)]
+        x1 = int(o.x * W); y1 = int(o.y * H)
+        x2 = int((o.x + o.w) * W); y2 = int((o.y + o.h) * H)
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        txt = f"{label} {o.prob:.2f}"
+        y_text = max(0, y1 - 6)
+        cv2.putText(out, txt, (x1, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2, cv2.LINE_AA)
+    return out
+
 def recognize_from_image(net):
     for image_path in args.input:
         logger.info(image_path)
@@ -273,7 +301,8 @@ def recognize_from_image(net):
         logger.info('Start inference...')
         dets = predict(net, img)
         res_img = draw_flying_results(dets, img)
-        savepath = get_savepath(args.savepath, image_path, ext='.png')
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        savepath = get_savepath(str(RESULTS_DIR / "out.png"), image_path, ext='.png')
         logger.info(f'saved at : {savepath}')
         cv2.imwrite(savepath, res_img)
         if args.write_prediction is not None:
@@ -287,11 +316,12 @@ def recognize_from_video(net):
     capture = get_capture(video_file)
     assert capture.isOpened(), 'Cannot capture source'
 
-    # video writer
-    if args.savepath != SAVE_IMAGE_PATH:
+    if args.savepath and args.savepath != SAVE_IMAGE_PATH:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = str((RESULTS_DIR / Path(args.savepath).name).resolve())
         f_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         f_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        writer = get_writer(args.savepath, f_h, f_w)
+        writer = get_writer(out_path, f_h, f_w)
     else:
         writer = None
 
@@ -305,7 +335,6 @@ def recognize_from_video(net):
 
         H, W = frame.shape[:2]
 
-        # ROI crop (top band) → predict → map back to full frame
         if USE_ROI_TOP:
             roi_h = int(H * ROI_KEEP_TOP)
             roi = frame[:roi_h, :, :]
@@ -313,26 +342,19 @@ def recognize_from_video(net):
             dets_roi = predict(net, img)
             dets = []
             for o in dets_roi:
-                # map normalized (roi) → normalized (full frame)
                 x1 = o.x * 1.0
                 y1 = o.y * (roi_h / H)
                 w1 = o.w * 1.0
                 h1 = o.h * (roi_h / H)
-                r = ailia.DetectorObject(
-                    category=o.category,
-                    prob=o.prob,
-                    x=x1, y=y1, w=w1, h=h1
-                )
+                r = ailia.DetectorObject(category=o.category, prob=o.prob, x=x1, y=y1, w=w1, h=h1)
                 dets.append(r)
         else:
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             dets = predict(net, img)
 
-        # Multi-frame confirmation
         if USE_TRACK_CONFIRM:
             dets = confirm_multi_frame(dets, W, H, iou_thr=TRACK_IOU)
 
-        # Draw
         res_img = draw_flying_results(dets, frame)
 
         cv2.imshow('frame', res_img)
@@ -346,6 +368,35 @@ def recognize_from_video(net):
         writer.release()
     logger.info('Script finished successfully.')
 
+def _pick_default_clip():
+    """Return the first video under solakair/clips/ (for one-click runs)."""
+    clips_dir = (Path(__file__).resolve().parent.parent / "clips")
+    exts = {'.mp4', '.mov', '.m4v', '.avi', '.mkv'}
+    if clips_dir.exists():
+        for p in sorted(clips_dir.iterdir()):
+            if p.is_file() and p.suffix.lower() in exts:
+                return str(p)
+    raise RuntimeError(
+        "No test video found under solakair/clips/. "
+        "Add a clip there or run with --video <path> or --input <image>."
+    )
+
+def _normalize_inputs():
+    """Keep only real media files; empty list means: we'll auto-pick a clip."""
+    if args.video is not None:
+        return
+    MEDIA_SUFFIXES = {
+        '.jpg','.jpeg','.png','.bmp','.tif','.tiff',
+        '.mp4','.mov','.m4v','.avi','.mkv'
+    }
+    valid = []
+    for p in args.input:
+        pp = Path(p)
+        if pp.exists() and pp.suffix.lower() in MEDIA_SUFFIXES:
+            valid.append(p)
+    args.input = valid
+
+
 def main():
     dic_model = {
         's-320': (WEIGHT_S_320_PATH, MODEL_S_320_PATH),
@@ -355,12 +406,25 @@ def main():
     }
     WEIGHT_PATH, MODEL_PATH = dic_model[args.model_type]
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
+
+    # NEW: sanitize inputs and auto-pick a clip if none was provided
+    _normalize_inputs()
+    if args.video is None and len(args.input) == 0:
+        try:
+            args.video = _pick_default_clip()
+            logger.info(f"No --input/--video. Using default clip: {args.video}")
+        except RuntimeError as e:
+            logger.error(str(e))
+            return
+
     env_id = args.env_id
     net = ailia.Net(MODEL_PATH, WEIGHT_PATH, env_id=env_id)
+
     if args.video is not None:
         recognize_from_video(net)
     else:
         recognize_from_image(net)
+
 
 if __name__ == '__main__':
     main()
