@@ -33,4 +33,11 @@ Good **baseline on CPU**, but for drone use we should **fine-tune a small detect
 4. Try on **Raspberry Pi 5** with real camera footage.
 
 *Models auto-download on first run (internet required).*  
-*Ailia SDK license: https://ailia.ai/license/*
+ 
+## Sources
+- Upstream demo: ailia-models (PicoDet) — https://github.com/axinc-ai/ailia-models
+- Paper: PP-PicoDet — https://arxiv.org/abs/2111.00902
+- ailia SDK license (commercial): https://ailia.ai/license/
+
+**Note:** I only use the PicoDet example from ailia-models. I don’t include ailia SDK or the model files; the script downloads models on first run.
+
