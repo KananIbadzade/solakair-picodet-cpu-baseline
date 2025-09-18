@@ -1,0 +1,12 @@
+# CPU @416
+python3 ailia-models/object_detection/picodet/picodet.py \
+  --video ailia-models/object_detection/picodet/data_sample/drone_1.mov \
+  --env_id 0 --model_type s-416 --threshold 0.35 --iou 0.65 \
+  --savepath ailia-models/object_detection/picodet/outputs/drone1_s416_cpu.mp4
+
+# CPU @640
+python3 ailia-models/object_detection/picodet/picodet.py \
+  --video ailia-models/object_detection/picodet/data_sample/drone_1.mov \
+  --env_id 0 --model_type l-640 --threshold 0.35 --iou 0.65 \
+  --savepath ailia-models/object_detection/picodet/outputs/drone1_l640_cpu.mp4
+

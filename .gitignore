@@ -1,0 +1,18 @@
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+
+# Raw/large media
+clips/**
+results/*.mp4
+results/*.mov
+results/*.MOV
+!results/*sample*.mp4   # keep tiny sample clips only
+
+# Models/checkpoints (if any land here later)
+*.onnx
+*.prototxt
+*.pt
+*.pth
