@@ -16,3 +16,8 @@ results/*.MOV
 *.prototxt
 *.pt
 *.pth
+
+.venv/
+__pycache__/
+*.onnx
+*.prototxt
